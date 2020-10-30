@@ -1,0 +1,620 @@
+from functools import reduce
+# import random
+
+# obstacles = []
+explored = []
+corners = []
+turn_index = 0
+
+
+def count_outer_walls(x, y):
+
+    global obstacles, steps
+
+    walls = 0
+
+    if (x - steps, y + steps) in obstacles:
+        walls += 1
+
+    if (x - steps, y - steps) in obstacles:
+        walls += 1
+
+    if (x + steps, y - steps) in obstacles:
+        walls += 1
+
+    if (x + steps, y + steps) in obstacles:
+        walls += 1
+
+    return walls
+
+
+def is_corner(x, y):
+
+    global obstacles, steps
+
+    walls = 0
+
+    if (x - steps, y) in obstacles:
+        walls += 1
+
+    if (x, y - steps) in obstacles:
+        walls += 1
+        if walls == 2:
+            return True
+
+    if (x + steps, y) in obstacles:
+        walls += 1
+        if walls == 2:
+            return True
+
+    if (x, y + steps) in obstacles:
+        walls += 1
+        if walls == 2:
+            return True
+
+    return False
+
+
+def get_newx_newy(env, x, y):
+    """[summary]
+
+    Args:
+        env (module): The world module used in the program
+        x (int): current x co-ordinate
+        y (int): current y co-ordinate
+
+    Returns:
+        tuple: new x, new y
+    """
+
+    global steps
+
+    direction = env.current_direction_index
+
+    if direction == 0:
+        return x, y + steps
+
+    if direction == 1:
+        return x + steps, y
+
+    if direction == 2:
+        return x, y - steps
+
+    if direction == 3:
+        return x - steps, y
+
+
+def is_dead_end(env, direction, x, y):
+    """Finds available sides to turn to
+
+    Args:
+        x (int): current x co-ordinate
+        y (int): current y co-ordinate
+
+    Returns:
+        list: list of available turns
+    """
+
+    global obstacles, steps
+
+    if y == -200:
+        add_obstacle(env, direction, x, y - steps)
+    elif y == 200 - steps:
+        add_obstacle(env, direction, x, y + steps)
+    elif x == -100:
+        add_obstacle(env, direction, x - steps, y)
+    elif x == 100 - steps:
+        add_obstacle(env, direction, x + steps, y)
+
+    walls = 0
+
+    if direction == 0:
+        # ^
+        if (x - steps, y) in obstacles:
+            walls += 1
+
+        if (x + steps, y) in obstacles:
+            walls += 1
+
+        if (x, y - steps) in obstacles:
+            walls += 1
+
+    if direction == 1:
+        # >
+        if (x, y + steps) in obstacles:
+            walls += 1
+
+        if (x, y - steps) in obstacles:
+            walls += 1
+        
+        if (x - steps, y) in obstacles:
+            walls += 1
+
+    if direction == 2:
+        # v
+        if (x + steps, y) in obstacles:
+            walls += 1
+
+        if (x - steps, y) in obstacles:
+            walls += 1
+
+        if (x, y + steps) in obstacles:
+            walls += 1
+
+    if direction == 3:
+        # <
+        if (x, y - steps) in obstacles:
+            walls += 1
+
+        if (x, y + steps) in obstacles:
+            walls += 1
+
+        if (x + steps, y) in obstacles:
+            walls += 1
+
+    return walls == 3
+
+
+def check_is_loop(robot_name, env, direction):
+    """Checks if the robot is in a loop
+
+    Args:
+        robot_name (str): name given to the robot
+        env (module): The world module used in the program
+        direction (int): the direction which the robot is facing
+
+    Returns:
+        (boolean, list): True if its in a loop, A list of the loop coordinates 
+    """
+
+    global corners
+
+    x, y = get_current_location(env)
+
+    loop_points = list(
+        filter(
+            # lambda corner: corner[0] == x and corner[1] == y, corners
+            lambda corner: corner == (x, y), corners
+        )
+    )
+
+    print("loop points", loop_points)
+    if len(loop_points) > 1: # 2
+        print("is loop")
+        loop_indexes = [
+            i for i in range(len(corners))
+            if corners[i] == (x, y)
+        ]
+
+        last_index  = loop_indexes[-1]
+        loop_indexes = [
+            loop_indexes[i] for i in range(len(loop_indexes) - 1)
+            if loop_indexes[i + 1] - loop_indexes[i] > 1
+        ]
+        loop_indexes.append(last_index)
+
+        print("indexes", loop_indexes)
+        if len(loop_indexes) > 1:
+            print("segment", corners[loop_indexes[0]:loop_indexes[1]])
+            return True, corners[loop_indexes[0]:loop_indexes[1]]
+        elif len(loop_indexes) == 1:
+            print("segment", corners[loop_indexes[0]])
+            return True, corners[loop_indexes[0]:]
+
+    return False, []
+
+
+def add_obstacle(env, direction, x, y):
+    """Adds a marker to avoid reaching same dead end
+
+    Args:
+        x (int): current x co-ordinate
+        y (int): current y co-ordinate
+
+    Returns:
+        None
+    """
+    global obstacles, corners
+
+    if (x,y) not in obstacles:
+        obstacles.append((x, y))
+        env.show_dead_end(x, y, steps)
+        corners = []
+
+    return
+
+
+def get_path_ways(direction, x, y):
+    """Finds available sides to turn to
+
+    Args:
+        x (int): current x co-ordinate
+        y (int): current y co-ordinate
+
+    Returns:
+        list: list of available turns
+    """
+
+    global obstacles, explored, steps
+
+    # path_way = []
+
+    if direction == 0:
+        # ^
+        if (x, y + steps) not in obstacles and (x, y + steps) not in explored:
+            return "forward"
+
+        if (x - steps, y) not in obstacles and (x - steps, y) not in explored:
+            return "left"
+
+        if (x + steps, y) not in obstacles and (x + steps, y) not in explored:
+            return "right"
+
+        if (x, y + steps) not in obstacles:
+            return "forward"
+
+        if (x - steps, y) not in obstacles:
+            # path_way.append("left")
+            return "left"
+
+        if (x + steps, y) not in obstacles:
+            # path_way.append("right")
+            return "right"
+
+    if direction == 1:
+        # >
+        if (x + steps, y) not in obstacles and (x + steps, y) not in explored:
+            return "forward"
+
+        if (x, y + steps) not in obstacles and (x, y + steps) not in explored:
+            return "left"
+
+        if (x, y - steps) not in obstacles and (x, y - steps) not in explored:
+            return "right"
+
+        if (x + steps, y) not in obstacles:
+            return "forward"
+
+        if (x, y + steps) not in obstacles:
+            # path_way.append("left")
+            return "left"
+
+        if (x, y - steps) not in obstacles:
+            # path_way.append("right")
+            return "right"
+
+    if direction == 2:
+        # v
+        if (x, y - steps) not in obstacles and (x, y - steps) not in explored:
+            return "forward"
+
+        if (x + steps, y) not in obstacles and (x + steps, y) not in explored:
+            print("left available")
+            return "left"
+
+        if (x - steps, y) not in obstacles and (x - steps, y) not in explored:
+            return "right"
+
+        if (x, y - steps) not in obstacles:
+            return "forward"
+            
+        if (x + steps, y) not in obstacles:
+            # path_way.append("left")
+            return "left"
+
+        if (x - steps, y) not in obstacles:
+            # path_way.append("right")
+            return "right"
+
+    if direction == 3:
+        # <
+        if (x - steps, y) not in obstacles and (x - steps, y) not in explored:
+            return "forward"
+
+        if (x, y - steps) not in obstacles and (x, y - steps) not in explored:
+            return "left"
+
+        if (x, y + steps) not in obstacles and (x, y + steps) not in explored:
+            return "right"
+
+        if (x - steps, y) not in obstacles:
+            return "forward"
+            
+        if (x, y - steps) not in obstacles:
+            # path_way.append("left")
+            print(":left")
+            return "left"
+
+        if (x, y + steps) not in obstacles:
+            # path_way.append("right")
+            return "right"
+
+    return ""
+
+
+def do_turn(robot_name, env, direction, x, y):
+    """Turns the robot in either left or right
+
+    Args:
+        robot_name (str): name given to the robot
+        env (module): The world module used in the program
+        direction (int): the direction which the robot is facing
+        x (int): current x coordinate
+        y (int): current y coordinate
+
+    Returns:
+        boolean: True if turn was complete
+    """
+
+    global turn_index
+
+    path_way = get_path_ways(env.current_direction_index, x, y)
+    # if len(path_way) >= 1:
+    if "left" == path_way:
+        (do_next, command_output) = env.do_left_turn(robot_name)
+        print(command_output)
+        corners.append(get_current_location(env))
+        turn_index == 0
+        return True
+    elif "right" == path_way:
+        (do_next, command_output) = env.do_right_turn(robot_name)
+        print(command_output)
+        corners.append(get_current_location(env))
+        turn_index == 1
+        return True
+    elif "forward" == path_way:
+        return True
+
+    return False
+
+
+def do_forward(robot_name, env):
+    """Moves the robot forward
+
+    Args:
+        robot_name (str): name given to the robot
+        env (module): The world module used in the program
+    """
+
+    global explored
+
+    (do_next, command_output) = env.do_forward(robot_name, steps)
+    print(command_output)
+    x, y = get_current_location(env)
+    print(f"> HAL now at position ({x},{y}).")
+    explored.append((x, y))
+
+
+def in_new_obstacles(direction, x, y):
+    """Determines if the position to be moved to is blocked using updated obstacles
+
+    Args:
+        x (int): The x co-ordinate of the position being moved to.
+        y (int): The y co-ordinate of the position being moved to.
+    """
+
+    global obstacles, steps
+
+    for xcor, ycor in obstacles:
+        if direction == 0:
+            if x in range(xcor, xcor + steps - 1) and y + steps in range(ycor, ycor + steps - 1):
+                return True
+        elif direction == 1:
+            if x + steps in range(xcor, xcor + steps - 1) and y in range(ycor, ycor + steps - 1):  
+                return True
+        elif direction == 2:
+            if x in range(xcor, xcor + steps - 1) and y - steps in range(ycor, ycor + steps - 1):
+                return True
+        elif direction == 3:
+            if x - steps in range(xcor, xcor + steps - 1) and y in range(ycor, ycor + steps - 1):
+                return True
+    return False
+
+
+def get_end_point(edge, env):
+    """Mark stopping location for mazerunner
+
+    Args:
+        edge (string): the edge the robot should travel to
+        env (module): The world module used in the program
+
+    Returns:
+        (range): location to stop mazerunner
+    """
+    global steps
+
+    if edge == 'top' or edge == '':
+        return range(env.max_y - steps, env.max_y)
+
+    if edge == 'bottom':
+        return range(env.min_y, env.min_y + steps)
+
+    if edge == 'left':
+        return range(env.min_x, env.min_x + steps)
+
+    if edge == 'right':
+        return range(env.max_x - steps, env.max_x)
+
+
+def get_current_location(env):
+    """Retrieves the current position of the robot
+
+    Args:
+        env (module): The world module used in the program
+
+    Returns:
+        tuple: x and y coordinate
+    """
+    return env.position_x, env.position_y
+
+
+def navigate(robot_name, env, mazerunner):
+
+    global steps, corners, turn_index, explored
+    
+    x, y = get_current_location(env)
+    direction = env.current_direction_index
+    
+    if y == -200:
+        add_obstacle(env, direction, x, y - steps)
+    elif y == 200 - steps:
+        add_obstacle(env, direction, x, y + steps)
+    elif x == -100:
+        add_obstacle(env, direction, x - steps, y)
+    elif x == 100 - steps:
+        add_obstacle(env, direction, x + steps, y)
+
+    dead_end = is_dead_end(env, env.current_direction_index, x, y)
+    x_temp = x
+    y_temp = y
+
+    (is_loop, segment) = check_is_loop(robot_name, env, direction)
+
+    do_forward(robot_name, env)
+
+    if is_loop:
+        print("found a loop")
+        # print(explored)
+        reversed_explored = explored[::-1]
+        loop_point = reversed_explored[0]
+        indexes = list(
+            filter(
+                lambda i:
+                reversed_explored[i] == loop_point, range(len(reversed_explored))
+            )
+        )
+
+        if len(indexes) > 1:
+            segment = reversed_explored[indexes[0]:indexes[1]]
+            segments = [reversed_explored[i:i + (len(segment))] for i in range(len(reversed_explored))]
+            segment_count = 0
+            for sub_segment in segments:
+                if sub_segment == segment:
+                    segment_count += 1
+            
+            if segment_count > 1:
+                mid_segment = (len(segment) // 2)
+                loop_x = segment[mid_segment][0]
+                loop_y = segment[mid_segment][1]
+                add_obstacle(env, direction, loop_x, loop_y)
+
+            explored = []
+
+        # TODO: First Try
+        # segment1 = reversed_explored[indexes[0]:indexes[1]]
+        # segment2 = reversed_explored[indexes[1]:indexes[2]]
+        # print(segment1, "\n", segment2)
+        # if segment1 == segment2:
+        #     mid_segment = (len(segment) // 2)
+        #     loop_x = segment1[mid_segment][0]
+        #     loop_y = segment2[mid_segment][1]
+        #     add_obstacle(env, direction, loop_x, loop_y)
+
+    if dead_end:
+        add_obstacle(env, direction, x_temp, y_temp)
+
+    x, y = get_current_location(env)
+    if do_turn(robot_name, env, env.current_direction_index, x, y):
+        print("do turn 90")
+        print(env.current_direction_index)
+        pass
+    else:
+        print("turn back 180")
+        (do_next, command_output) = env.do_left_turn(robot_name)
+        print(command_output)
+        x, y = get_current_location(env)
+        print(f"> HAL now at position ({x},{y}).")
+        (do_next, command_output) = env.do_left_turn(robot_name)
+        print(command_output)
+        x, y = get_current_location(env)
+        print(f"> HAL now at position ({x},{y}).")
+
+#     if in_new_obstacles(env.current_direction_index, x, y):
+#         if do_turn(robot_name, env, env.current_direction_index, x, y):
+#             pass
+#         else:
+#             (do_next, command_output) = env.do_left_turn(robot_name)
+#             (do_next, command_output) = env.do_left_turn(robot_name)
+            
+#     else:
+
+#         dead_end = is_dead_end(env, env.current_direction_index, x, y)
+#         x_temp = x
+#         y_temp = y
+
+#         do_forward(robot_name, env)
+#         x, y = get_current_location(env)
+# # #         do_turn(robot_name, env, env.current_direction_index, x, y)
+#         if dead_end:
+#             add_obstacle(env, env.current_direction_index, x_temp, y_temp)
+
+#         (is_loop, segment) = check_is_loop(robot_name, env, env.current_direction_index)
+        
+#         if is_loop:
+#             print("is_loop")
+#             print("segment", segment)
+#             direction = env.current_direction_index
+#             count = 0
+#             for x_cor, y_cor in segment[1:]:
+#                 count += 1
+#                 if is_corner(x_cor, y_cor) and (x_cor, y_cor) != env.current_direction_index:
+#                     add_obstacle(env, direction, x_cor, y_cor)
+#                     break
+#                 elif count_outer_walls(x_cor, y_cor) == 1 and ((x_cor, y_cor) != env.current_direction_index):
+#                     add_obstacle(env, direction, x_cor, y_cor)
+#                     break
+#                 elif count_outer_walls(x_cor, y_cor) == 2 and ((x_cor, y_cor) != env.current_direction_index):
+#                     add_obstacle(env, direction, x_cor, y_cor)
+#                     break
+            
+#         x, y = get_current_location(env)
+#         do_turn(robot_name, env, env.current_direction_index, x, y)
+            
+
+def do_mazerun(robot_name, edge, env):
+    """Initializes variables for thr robot to automatically solve maze
+
+    Args:
+        robot_name (str): name given to the robot
+        edge (string): the edge the robot should travel to
+        env (module): The world module used in the program
+    """
+
+    global maze, obstacles, steps, corners, turn_index, explored
+
+    print(f"> {robot_name} starting maze run..")
+
+    maze = env.obstacles
+    obstacles = []
+    explored = []
+    print(obstacles)
+    obstacles = env.obstacles.get_obstacles()
+    print(obstacles)
+    print()
+    turn_index = 0
+
+    mazerunner = env.i_robot
+    mazerunner.clear()
+    mazerunner.speed(0)
+
+    x, y = get_current_location(env)
+
+    if (x, y) == (0, 0):
+        steps = env.get_steps()
+        mazerunner.up()
+        mazerunner.goto(x + (env.get_steps() / 2), (x + env.get_steps() / 2))
+        mazerunner.down()
+
+    finish = get_end_point(edge, env)
+    # print(finish)
+
+    if edge == '' or edge == 'top' or edge == 'bottom':
+        print(edge)
+        while env.position_y not in finish:
+            navigate(robot_name, env, mazerunner)
+    else:
+        print(edge)
+        while env.position_x not in finish:
+            navigate(robot_name, env, mazerunner)
+
+    return True, robot_name
